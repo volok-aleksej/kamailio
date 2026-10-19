@@ -1,6 +1,5 @@
 /**
  * Copyright (C) 2019-2026 Alexey Volokitin (didww.com)
- * Copyright (C) 2025-2026 Michael Furmur (didww.com)
  *
  * This file is part of Kamailio, a free SIP server.
  *
@@ -20,22 +19,11 @@
  *
  */
 
-#ifndef _VL_PARAM_MAP_PARSER_H_
-#define _VL_PARAM_MAP_PARSER_H_
+#ifndef _LH_FORMAT_NDJSON_H_
+#define _LH_FORMAT_NDJSON_H_
 
-#include "../../core/str.h"
+#include "../lh_format.h"
 
-/**
- * callback invoked by parse_log_mapping():
- *  - once with name==NULL when a new group key is found
- *  - once per "name:type" pair inside the group
- */
-typedef int (*parser_cb)(
-		str *key, str *name, int type, str *stype, void *usrdata);
-
-/**
- * parse mapping string of format "key(name:type[,name:type...])"
- */
-int parse_log_mapping(char *val, parser_cb cb, void *userdata);
+extern const lh_format_t lh_format_ndjson;
 
 #endif

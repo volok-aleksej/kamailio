@@ -1,16 +1,16 @@
 #
-# log_victorialogs module makefile
+# log_http module makefile
 #
 #
 # WARNING: do not run this directly, it should be run by the main Makefile
 
 include ../../Makefile.defs
 auto_gen=
-NAME=log_victorialogs.so
+NAME=log_http.so
 
 ifneq ($(OS),)
 ifneq ($(OS),linux)
-$(error log_victorialogs: module is supported only on Linux (epoll, timerfd))
+$(error log_http: module is supported only on Linux (epoll, timerfd))
 endif
 endif
 
@@ -32,3 +32,9 @@ else
 endif
 
 include ../../Makefile.modules
+
+# formats are in a subdirectory: add them to the sources and to the
+# prerequisites of the module (the link rule is already expanded)
+format_sources=$(wildcard formats/*.c)
+sources+=$(format_sources)
+$(NAME): $(format_sources:.c=.o)

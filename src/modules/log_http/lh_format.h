@@ -1,6 +1,5 @@
 /**
  * Copyright (C) 2019-2026 Alexey Volokitin (didww.com)
- * Copyright (C) 2025-2026 Michael Furmur (didww.com)
  *
  * This file is part of Kamailio, a free SIP server.
  *
@@ -20,21 +19,43 @@
  *
  */
 
-#ifndef _VL_CURL_DEFS_H_
-#define _VL_CURL_DEFS_H_
+#ifndef _LH_FORMAT_H_
+#define _LH_FORMAT_H_
 
-#include <curl/curl.h>
+#include "../../core/str.h"
+#include "lh_async.h"
 
-#define easy_setopt(curl, opt, val)                             \
-	if(CURLE_OK != curl_easy_setopt(curl, opt, val)) {          \
-		LM_ERR("curl_easy_setopt error for option " #opt "\n"); \
-		return -1;                                              \
-	}
+#define LH_OPT_STR 1
+#define LH_OPT_INT 2
 
-#define multi_setopt(curl_multi, opt, val)                       \
-	if(CURLM_OK != curl_multi_setopt(curl_multi, opt, val)) {    \
-		LM_ERR("curl_multi_setopt error for option " #opt "\n"); \
-		return -1;                                               \
-	}
+typedef struct lh_format_opt
+{
+	const char *name;
+	int type; /* LH_OPT_STR (str *) or LH_OPT_INT (int *) */
+	void *dst;
+} lh_format_opt_t;
+
+/**
+ * Output format (log server dialect).
+ */
+typedef struct lh_format
+{
+	const char *name;
+	const char *content_type;
+	const lh_format_opt_t *opts;
+	int (*init)(void);
+	int (*body_begin)(lh_body_t *body);
+	int (*body_entry)(lh_body_t *body, const str *entry);
+	int (*body_end)(lh_body_t *body);
+} lh_format_t;
+
+/* format selected by the "format" modparam */
+extern const lh_format_t *lh_format;
+
+int lh_format_parse(char *val);
+
+int lh_format_set_default(void);
+
+void lh_format_destroy(void);
 
 #endif

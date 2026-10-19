@@ -1,6 +1,5 @@
 /**
  * Copyright (C) 2019-2026 Alexey Volokitin (didww.com)
- * Copyright (C) 2025-2026 Michael Furmur (didww.com)
  *
  * This file is part of Kamailio, a free SIP server.
  *
@@ -22,7 +21,7 @@
 
 #include "param_map_parser.h"
 #include "../../core/dprint.h"
-#include "log_victorialogs.h"
+#include "log_http.h"
 
 enum parser_state
 {
@@ -63,7 +62,7 @@ int parse_log_mapping(char *val, parser_cb cb, void *userdata)
 				type.s = begin;                                               \
 				type.len = c - begin;                                         \
 				begin = 0;                                                    \
-				if(cb(&key, &name, vl_get_param_type(&type), &type, userdata) \
+				if(cb(&key, &name, lh_get_param_type(&type), &type, userdata) \
 						< 0)                                                  \
 					return -1;                                                \
 				break;                                                        \

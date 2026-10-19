@@ -1,6 +1,5 @@
 /**
  * Copyright (C) 2019-2026 Alexey Volokitin (didww.com)
- * Copyright (C) 2025-2026 Michael Furmur (didww.com)
  *
  * This file is part of Kamailio, a free SIP server.
  *
@@ -20,32 +19,32 @@
  *
  */
 
-#ifndef _LOG_VICTORIALOGS_H_
-#define _LOG_VICTORIALOGS_H_
+#ifndef _LOG_HTTP_H_
+#define _LOG_HTTP_H_
 
 #include "../../core/list.h"
 #include "../../core/str.h"
 #include "../../core/sr_module.h"
 #include "../../core/counters.h"
 
-/* one VictoriaLogs ingestion endpoint (modparam "target") */
-struct vl_target
+/* one log server endpoint (modparam "target") */
+struct lh_target
 {
-	SLIST_ENTRY(vl_target) next;
+	SLIST_ENTRY(lh_target) next;
 	str url;
 };
 
-typedef SLIST_HEAD(, vl_target) vl_target_list_t;
+typedef SLIST_HEAD(, lh_target) lh_target_list_t;
 
-#define VL_DEFAULT_START_TYPE 0x1000
-#define VL_STANDARD_START_TYPE 0x1
+#define LH_DEFAULT_START_TYPE 0x1000
+#define LH_STANDARD_START_TYPE 0x1
 
 typedef enum
 {
 	LPT_NONE,
 
-	/* types allowed in "map" - values come from vl_log() arguments */
-	LPT_STRING = VL_STANDARD_START_TYPE,
+	/* types allowed in "map" - values come from http_log() arguments */
+	LPT_STRING = LH_STANDARD_START_TYPE,
 	LPT_NUMBER,
 	LPT_IPADDR,
 	LPT_BOOL,
@@ -53,7 +52,7 @@ typedef enum
 	LPT_FLOAT,
 
 	/* types allowed in "default_map" - values are taken automatically */
-	LPDT_ROUTENAME = VL_DEFAULT_START_TYPE,
+	LPDT_ROUTENAME = LH_DEFAULT_START_TYPE,
 	LPDT_TIMESTAMP,
 	LPDT_PLACEHOLDER,
 	LPDT_IMMEDIATE
@@ -88,25 +87,20 @@ struct group_key
 
 typedef SLIST_HEAD(, group_key) group_key_t;
 
-extern group_key_t vl_log_grp;
-extern vl_target_list_t vl_targets;
-extern str vl_stream_fields;
-extern str vl_msg_field;
-extern str vl_time_field;
-extern str vl_extra_fields;
-extern int vl_account_id;
-extern int vl_project_id;
-extern int vl_timeout;
-extern unsigned int vl_batch_size;
-extern unsigned int vl_batch_delay;
-extern unsigned int vl_queue_size;
-extern str vl_auth_usrpwd;
+extern group_key_t lh_log_grp;
+extern lh_target_list_t lh_targets;
+extern int lh_timeout;
+extern int lh_chunked;
+extern unsigned int lh_batch_size;
+extern unsigned int lh_batch_delay;
+extern unsigned int lh_queue_size;
+extern str lh_auth_usrpwd;
 
-extern stat_var *vl_stat_queue_size;
-extern stat_var *vl_stat_drop_total;
-extern stat_var *vl_stat_err_total;
+extern stat_var *lh_stat_queue_size;
+extern stat_var *lh_stat_drop_total;
+extern stat_var *lh_stat_err_total;
 
-struct vl_target *vl_get_next_target(void);
-int vl_get_param_type(str *type);
+struct lh_target *lh_get_next_target(void);
+int lh_get_param_type(str *type);
 
 #endif

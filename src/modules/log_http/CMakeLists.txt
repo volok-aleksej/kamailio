@@ -2,7 +2,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
   message(FATAL_ERROR "${module_name}: module is supported only on Linux (epoll, timerfd)")
 endif()
 
-file(GLOB MODULE_SOURCES "*.c")
+file(GLOB MODULE_SOURCES "*.c" "formats/*.c")
 
 add_library(${module_name} SHARED ${MODULE_SOURCES})
 

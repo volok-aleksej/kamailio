@@ -1,6 +1,5 @@
 /**
  * Copyright (C) 2019-2026 Alexey Volokitin (didww.com)
- * Copyright (C) 2025-2026 Michael Furmur (didww.com)
  *
  * This file is part of Kamailio, a free SIP server.
  *
@@ -20,8 +19,8 @@
  *
  */
 
-#ifndef _VL_ASYNC_H_
-#define _VL_ASYNC_H_
+#ifndef _LH_ASYNC_H_
+#define _LH_ASYNC_H_
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -29,10 +28,10 @@
 #include "../../core/str.h"
 #include "../../core/list.h"
 #include "../../core/ip_addr.h"
-#include "log_victorialogs.h"
+#include "log_http.h"
 
 struct group_key;
-struct vl_target;
+struct lh_target;
 
 typedef struct
 {
@@ -64,31 +63,42 @@ typedef struct
 } async_log_entry_t;
 
 /* serialized json line waiting in the sender queue */
-struct vl_message
+struct lh_message
 {
-	STAILQ_ENTRY(vl_message) next;
+	STAILQ_ENTRY(lh_message) next;
 	str msg_str;
 };
 
-STAILQ_HEAD(vl_queue_t, vl_message);
-typedef struct vl_queue_t vl_queue_t;
+STAILQ_HEAD(lh_queue_t, lh_message);
+typedef struct lh_queue_t lh_queue_t;
+
+/* growable pkg buffer the request body is assembled in */
+typedef struct
+{
+	char *s;
+	int len;
+	int size;
+} lh_body_t;
+
+/* append data to the body, growing the buffer as needed */
+int lh_body_append(lh_body_t *body, const char *data, int len);
 
 /* called from SIP workers: pack the values and pass them to the sender */
-int vl_async_send(struct group_key *key, async_param_value_t *values, int size);
+int lh_async_send(struct group_key *key, async_param_value_t *values, int size);
 
 /* called in the sender process: serialize the entry and queue it.
  * returns true when a send should be triggered */
-bool vl_add_message_to_queue(async_log_entry_t *message);
+bool lh_add_message_to_queue(async_log_entry_t *message);
 
-void vl_free_queue(void);
+void lh_free_queue(void);
 
 /* start sending of the queued messages (if nothing is in flight) */
-void vl_send_queue_messages(void);
+void lh_send_queue_messages(void);
 
 /* finish the request in flight: drop the sent messages on success */
-void vl_send_queue_messages_fin(bool success);
+void lh_send_queue_messages_fin(bool success);
 
-int vl_curl_send_message(
-		struct vl_target *target, struct vl_target *failover_target);
+int lh_curl_send_message(
+		struct lh_target *target, struct lh_target *failover_target);
 
 #endif

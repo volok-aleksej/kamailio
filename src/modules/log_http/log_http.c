@@ -1,6 +1,5 @@
 /**
  * Copyright (C) 2019-2026 Alexey Volokitin (didww.com)
- * Copyright (C) 2025-2026 Michael Furmur (didww.com)
  *
  * This file is part of Kamailio, a free SIP server.
  *
@@ -39,64 +38,60 @@
 #include "../../core/cfg/cfg_struct.h"
 
 #include "param_map_parser.h"
-#include "log_victorialogs.h"
-#include "vl_worker.h"
-#include "vl_async.h"
+#include "log_http.h"
+#include "lh_worker.h"
+#include "lh_async.h"
+#include "lh_format.h"
 
 MODULE_VERSION
 
-group_key_t vl_log_grp = SLIST_HEAD_INITIALIZER(vl_log_grp);
-vl_target_list_t vl_targets = SLIST_HEAD_INITIALIZER(vl_targets);
-str vl_stream_fields = STR_NULL;
-str vl_msg_field = STR_NULL;
-str vl_time_field = STR_NULL;
-str vl_extra_fields = STR_NULL;
-int vl_account_id = 0;
-int vl_project_id = 0;
-int vl_timeout = 5000;
-unsigned int vl_batch_size = 0;
-unsigned int vl_batch_delay = 0;
-unsigned int vl_queue_size = 0;
-str vl_auth_usrpwd = STR_NULL;
+group_key_t lh_log_grp = SLIST_HEAD_INITIALIZER(lh_log_grp);
+lh_target_list_t lh_targets = SLIST_HEAD_INITIALIZER(lh_targets);
+int lh_timeout = 5000;
+int lh_chunked = 1;
+unsigned int lh_batch_size = 0;
+unsigned int lh_batch_delay = 0;
+unsigned int lh_queue_size = 0;
+str lh_auth_usrpwd = STR_NULL;
 
-stat_var *vl_stat_queue_size = 0;
-stat_var *vl_stat_drop_total = 0;
-stat_var *vl_stat_err_total = 0;
+stat_var *lh_stat_queue_size = 0;
+stat_var *lh_stat_drop_total = 0;
+stat_var *lh_stat_err_total = 0;
 
-static str vl_auth_usr = STR_NULL;
-static str vl_auth_pwd = STR_NULL;
-static char *vl_log_buf = NULL;
-static int vl_log_buf_size = 8192;
-static struct vl_target *vl_last_target = 0;
-static struct vl_target *vl_cur_target = 0;
+static str lh_auth_usr = STR_NULL;
+static str lh_auth_pwd = STR_NULL;
+static char *lh_log_buf = NULL;
+static int lh_log_buf_size = 8192;
+static struct lh_target *lh_last_target = 0;
+static struct lh_target *lh_cur_target = 0;
 
-static int vl_add_target(modparam_t type, void *val)
+static int lh_add_target(modparam_t type, void *val)
 {
 	char *url = (char *)val;
 	unsigned int size;
-	struct vl_target *target;
+	struct lh_target *target;
 
 	(void)type;
 
-	size = sizeof(struct vl_target) + strlen(url) + 1;
+	size = sizeof(struct lh_target) + strlen(url) + 1;
 	target = pkg_mallocxz(size);
 	if(!target) {
 		PKG_MEM_ERROR;
 		return -1;
 	}
-	target->url.s = (char *)target + sizeof(struct vl_target);
+	target->url.s = (char *)target + sizeof(struct lh_target);
 	target->url.len = strlen(url);
 	memcpy(target->url.s, url, target->url.len + 1);
 
-	if(vl_last_target)
-		SLIST_INSERT_AFTER(vl_last_target, target, next);
+	if(lh_last_target)
+		SLIST_INSERT_AFTER(lh_last_target, target, next);
 	else
-		SLIST_INSERT_HEAD(&vl_targets, target, next);
-	vl_last_target = target;
+		SLIST_INSERT_HEAD(&lh_targets, target, next);
+	lh_last_target = target;
 	return 0;
 }
 
-static int vl_parsing_map_cb(
+static int lh_parsing_map_cb(
 		str *key, str *name, int type, str *stype, void *usrdata)
 {
 	static struct log_grp_param *last_param = 0, *last_default_param = 0;
@@ -106,7 +101,7 @@ static int vl_parsing_map_cb(
 	log_grp_param_t *param_list = 0;
 	struct log_grp_param **last = 0;
 
-	SLIST_FOREACH(gkey, &vl_log_grp, next)
+	SLIST_FOREACH(gkey, &lh_log_grp, next)
 	{
 		if(gkey->group_key.len == key->len
 				&& strncmp(gkey->group_key.s, key->s, key->len) == 0) {
@@ -125,7 +120,7 @@ static int vl_parsing_map_cb(
 		gkey->group_key.s[key->len] = '\0';
 		SLIST_INIT(&gkey->params.default_params.head);
 		SLIST_INIT(&gkey->params.params.head);
-		SLIST_INSERT_HEAD(&vl_log_grp, gkey, next);
+		SLIST_INSERT_HEAD(&lh_log_grp, gkey, next);
 		last_param = 0;
 		last_default_param = 0;
 	}
@@ -137,11 +132,11 @@ static int vl_parsing_map_cb(
 		LM_ERR("unknown type '%.*s' for field '%.*s'\n", stype->len, stype->s,
 				name->len, name->s);
 		return -1;
-	} else if(default_ && type < VL_DEFAULT_START_TYPE) {
+	} else if(default_ && type < LH_DEFAULT_START_TYPE) {
 		LM_ERR("type '%.*s' is not allowed in default_map (field '%.*s')\n",
 				stype->len, stype->s, name->len, name->s);
 		return -1;
-	} else if(!default_ && type >= VL_DEFAULT_START_TYPE) {
+	} else if(!default_ && type >= LH_DEFAULT_START_TYPE) {
 		LM_ERR("type '%.*s' is not allowed in map (field '%.*s')\n", stype->len,
 				stype->s, name->len, name->s);
 		return -1;
@@ -185,26 +180,26 @@ static int vl_parsing_map_cb(
 	return 0;
 }
 
-static int vl_fill_auth_usrpwd(void)
+static int lh_fill_auth_usrpwd(void)
 {
-	if(vl_auth_usrpwd.s)
-		pkg_free(vl_auth_usrpwd.s);
-	vl_auth_usrpwd.len = vl_auth_usr.len + vl_auth_pwd.len + 1;
-	vl_auth_usrpwd.s = pkg_malloc(vl_auth_usrpwd.len + 1);
-	if(!vl_auth_usrpwd.s) {
+	if(lh_auth_usrpwd.s)
+		pkg_free(lh_auth_usrpwd.s);
+	lh_auth_usrpwd.len = lh_auth_usr.len + lh_auth_pwd.len + 1;
+	lh_auth_usrpwd.s = pkg_malloc(lh_auth_usrpwd.len + 1);
+	if(!lh_auth_usrpwd.s) {
 		PKG_MEM_ERROR;
-		vl_auth_usrpwd.len = 0;
+		lh_auth_usrpwd.len = 0;
 		return -1;
 	}
-	memcpy(vl_auth_usrpwd.s, vl_auth_usr.s, vl_auth_usr.len);
-	vl_auth_usrpwd.s[vl_auth_usr.len] = ':';
-	memcpy(vl_auth_usrpwd.s + vl_auth_usr.len + 1, vl_auth_pwd.s,
-			vl_auth_pwd.len);
-	vl_auth_usrpwd.s[vl_auth_usrpwd.len] = '\0';
+	memcpy(lh_auth_usrpwd.s, lh_auth_usr.s, lh_auth_usr.len);
+	lh_auth_usrpwd.s[lh_auth_usr.len] = ':';
+	memcpy(lh_auth_usrpwd.s + lh_auth_usr.len + 1, lh_auth_pwd.s,
+			lh_auth_pwd.len);
+	lh_auth_usrpwd.s[lh_auth_usrpwd.len] = '\0';
 	return 0;
 }
 
-static int vl_set_auth_str(str *dst, char *val)
+static int lh_set_auth_str(str *dst, char *val)
 {
 	if(dst->s)
 		pkg_free(dst->s);
@@ -219,62 +214,64 @@ static int vl_set_auth_str(str *dst, char *val)
 	return 0;
 }
 
-static int vl_auth_username(modparam_t type, void *val)
+static int lh_auth_username(modparam_t type, void *val)
 {
 	(void)type;
-	if(vl_set_auth_str(&vl_auth_usr, (char *)val) < 0)
+	if(lh_set_auth_str(&lh_auth_usr, (char *)val) < 0)
 		return -1;
-	if(vl_auth_pwd.s)
-		return vl_fill_auth_usrpwd();
+	if(lh_auth_pwd.s)
+		return lh_fill_auth_usrpwd();
 	return 0;
 }
 
-static int vl_auth_password(modparam_t type, void *val)
+static int lh_auth_password(modparam_t type, void *val)
 {
 	(void)type;
-	if(vl_set_auth_str(&vl_auth_pwd, (char *)val) < 0)
+	if(lh_set_auth_str(&lh_auth_pwd, (char *)val) < 0)
 		return -1;
-	if(vl_auth_usr.s)
-		return vl_fill_auth_usrpwd();
+	if(lh_auth_usr.s)
+		return lh_fill_auth_usrpwd();
 	return 0;
 }
 
-static int vl_default_map_parse(modparam_t type, void *val)
+static int lh_default_map_parse(modparam_t type, void *val)
 {
 	bool is_default_map = true;
 	(void)type;
-	return parse_log_mapping((char *)val, vl_parsing_map_cb, &is_default_map);
+	return parse_log_mapping((char *)val, lh_parsing_map_cb, &is_default_map);
 }
 
-static int vl_map_parse(modparam_t type, void *val)
+static int lh_map_parse(modparam_t type, void *val)
 {
 	bool is_default_map = false;
 	(void)type;
-	return parse_log_mapping((char *)val, vl_parsing_map_cb, &is_default_map);
+	return parse_log_mapping((char *)val, lh_parsing_map_cb, &is_default_map);
+}
+
+static int lh_format_param(modparam_t type, void *val)
+{
+	(void)type;
+	return lh_format_parse((char *)val);
 }
 
 /* clang-format off */
 static param_export_t params[] = {
-	{"target", PARAM_STRING | PARAM_USE_FUNC, (void *)vl_add_target},
-	{"stream_fields", PARAM_STR, &vl_stream_fields},
-	{"msg_field", PARAM_STR, &vl_msg_field},
-	{"time_field", PARAM_STR, &vl_time_field},
-	{"extra_fields", PARAM_STR, &vl_extra_fields},
-	{"account_id", PARAM_INT, &vl_account_id},
-	{"project_id", PARAM_INT, &vl_project_id},
-	{"timeout", PARAM_INT, &vl_timeout},
-	{"batch_size", PARAM_INT, &vl_batch_size},
-	{"batch_delay", PARAM_INT, &vl_batch_delay},
-	{"queue_size", PARAM_INT, &vl_queue_size},
-	{"auth_username", PARAM_STRING | PARAM_USE_FUNC, (void *)vl_auth_username},
-	{"auth_password", PARAM_STRING | PARAM_USE_FUNC, (void *)vl_auth_password},
-	{"default_map", PARAM_STRING | PARAM_USE_FUNC, (void *)vl_default_map_parse},
-	{"map", PARAM_STRING | PARAM_USE_FUNC, (void *)vl_map_parse},
+	{"target", PARAM_STRING | PARAM_USE_FUNC, (void *)lh_add_target},
+	{"format", PARAM_STRING | PARAM_USE_FUNC, (void *)lh_format_param},
+	{"timeout", PARAM_INT, &lh_timeout},
+	{"chunked", PARAM_INT, &lh_chunked},
+	{"batch_size", PARAM_INT, &lh_batch_size},
+	{"batch_delay", PARAM_INT, &lh_batch_delay},
+	{"queue_size", PARAM_INT, &lh_queue_size},
+	{"auth_username", PARAM_STRING | PARAM_USE_FUNC, (void *)lh_auth_username},
+	{"auth_password", PARAM_STRING | PARAM_USE_FUNC, (void *)lh_auth_password},
+	{"default_map", PARAM_STRING | PARAM_USE_FUNC, (void *)lh_default_map_parse},
+	{"map", PARAM_STRING | PARAM_USE_FUNC, (void *)lh_map_parse},
 	{0, 0, 0}
 };
 /* clang-format on */
 
-static inline uint64_t vl_now_ms(void)
+static inline uint64_t lh_now_ms(void)
 {
 	struct timeval tv;
 	gettimeofday(&tv, 0);
@@ -282,12 +279,12 @@ static inline uint64_t vl_now_ms(void)
 }
 
 /* append a string to the per-call buffer; returns pointer to the copy */
-static char *vl_buf_append(char **cur, const char *s, int len)
+static char *lh_buf_append(char **cur, const char *s, int len)
 {
 	char *p = *cur;
-	if(len < 0 || (vl_log_buf + vl_log_buf_size) - p < len + 1) {
+	if(len < 0 || (lh_log_buf + lh_log_buf_size) - p < len + 1) {
 		LM_ERR("log buffer too small (%d bytes), value truncated\n",
-				vl_log_buf_size);
+				lh_log_buf_size);
 		return NULL;
 	}
 	memcpy(p, s, len);
@@ -296,7 +293,7 @@ static char *vl_buf_append(char **cur, const char *s, int len)
 	return p;
 }
 
-static int vl_fill_default_param(struct sip_msg *_m,
+static int lh_fill_default_param(struct sip_msg *_m,
 		struct log_grp_param *param, async_param_value_t *value, char **cur)
 {
 	pv_spec_t *pvspec;
@@ -312,7 +309,7 @@ static int vl_fill_default_param(struct sip_msg *_m,
 			break;
 		case LPDT_TIMESTAMP:
 			value->type = LPT_DATE;
-			value->u.date = vl_now_ms();
+			value->u.date = lh_now_ms();
 			break;
 		case LPDT_PLACEHOLDER:
 			pvspec = pv_cache_get(&param->stype);
@@ -325,7 +322,7 @@ static int vl_fill_default_param(struct sip_msg *_m,
 			if((pvvalue.flags & PV_VAL_NULL) || !(pvvalue.flags & PV_VAL_STR))
 				break;
 			value->u.string.s =
-					vl_buf_append(cur, pvvalue.rs.s, pvvalue.rs.len);
+					lh_buf_append(cur, pvvalue.rs.s, pvvalue.rs.len);
 			if(!value->u.string.s)
 				return -1;
 			value->u.string.len = pvvalue.rs.len;
@@ -340,7 +337,7 @@ static int vl_fill_default_param(struct sip_msg *_m,
 	return 0;
 }
 
-static int vl_fill_param(struct sip_msg *_m, struct log_grp_param *param,
+static int lh_fill_param(struct sip_msg *_m, struct log_grp_param *param,
 		char *arg, async_param_value_t *value, char **cur)
 {
 	str sarg;
@@ -377,7 +374,7 @@ static int vl_fill_param(struct sip_msg *_m, struct log_grp_param *param,
 				LM_ERR("wrong format [%s]\n", arg);
 				return -1;
 			}
-			len = vl_log_buf_size - (*cur - vl_log_buf);
+			len = lh_log_buf_size - (*cur - lh_log_buf);
 			if(len <= 0 || pv_printf(_m, pve, *cur, &len) < 0) {
 				pv_elem_free_all(pve);
 				LM_ERR("failed to evaluate [%s] (buffer left %d)\n", arg, len);
@@ -388,7 +385,7 @@ static int vl_fill_param(struct sip_msg *_m, struct log_grp_param *param,
 			value->u.string.s = *cur;
 			value->u.string.len = len;
 			*cur += len;
-			if(*cur < vl_log_buf + vl_log_buf_size)
+			if(*cur < lh_log_buf + lh_log_buf_size)
 				*(*cur)++ = '\0';
 			break;
 		case LPT_IPADDR:
@@ -424,17 +421,17 @@ static int vl_fill_param(struct sip_msg *_m, struct log_grp_param *param,
 	return 0;
 }
 
-static int vl_group_log(
+static int lh_group_log(
 		struct sip_msg *_m, struct group_key *key, int argc, action_u_t argv[])
 {
 	int ret;
 	int size;
 	int i = 0, j = 0;
-	char *cur = vl_log_buf;
+	char *cur = lh_log_buf;
 	async_param_value_t *params;
 	struct log_grp_param *param;
 
-	if(SLIST_EMPTY(&vl_targets)) {
+	if(SLIST_EMPTY(&lh_targets)) {
 		LM_ERR("no targets configured, specify at least one 'target' "
 			   "modparam\n");
 		return -1;
@@ -456,19 +453,19 @@ static int vl_group_log(
 
 	SLIST_FOREACH(param, &key->params.default_params.head, next)
 	{
-		if(vl_fill_default_param(_m, param, &params[i], &cur) < 0)
+		if(lh_fill_default_param(_m, param, &params[i], &cur) < 0)
 			goto err;
 		i++;
 	}
 	SLIST_FOREACH(param, &key->params.params.head, next)
 	{
-		if(vl_fill_param(_m, param, argv[j].u.string, &params[i], &cur) < 0)
+		if(lh_fill_param(_m, param, argv[j].u.string, &params[i], &cur) < 0)
 			goto err;
 		i++;
 		j++;
 	}
 
-	ret = vl_async_send(key, params, size);
+	ret = lh_async_send(key, params, size);
 	pkg_free(params);
 	if(ret < 0) {
 		if(_m && _m->callid && _m->callid->body.s) {
@@ -489,7 +486,7 @@ err:
 	return -1;
 }
 
-static int w_vl_log(struct sip_msg *_m, int argc, action_u_t argv[])
+static int w_http_log(struct sip_msg *_m, int argc, action_u_t argv[])
 {
 	str gkey;
 	struct group_key *key;
@@ -501,11 +498,11 @@ static int w_vl_log(struct sip_msg *_m, int argc, action_u_t argv[])
 
 	gkey.s = argv[0].u.string;
 	gkey.len = strlen(gkey.s);
-	SLIST_FOREACH(key, &vl_log_grp, next)
+	SLIST_FOREACH(key, &lh_log_grp, next)
 	{
 		if(gkey.len == key->group_key.len
 				&& strncmp(key->group_key.s, gkey.s, gkey.len) == 0) {
-			return vl_group_log(_m, key, argc - 1, argv + 1);
+			return lh_group_log(_m, key, argc - 1, argv + 1);
 		}
 	}
 
@@ -515,14 +512,14 @@ static int w_vl_log(struct sip_msg *_m, int argc, action_u_t argv[])
 
 /* clang-format off */
 static cmd_export_t cmds[] = {
-	{"vl_log", (cmd_function)w_vl_log, VAR_PARAM_NO, 0, 0, ANY_ROUTE},
+	{"http_log", (cmd_function)w_http_log, VAR_PARAM_NO, 0, 0, ANY_ROUTE},
 	{0, 0, 0, 0, 0, 0}
 };
 
 static stat_export_t mod_stats[] = {
-	{"vl_queue_size", 0, &vl_stat_queue_size},
-	{"vl_drop_total", 0, &vl_stat_drop_total},
-	{"vl_err_total", 0, &vl_stat_err_total},
+	{"lh_queue_size", 0, &lh_stat_queue_size},
+	{"lh_drop_total", 0, &lh_stat_drop_total},
+	{"lh_err_total", 0, &lh_stat_err_total},
 	{0, 0, 0}
 };
 /* clang-format on */
@@ -533,7 +530,7 @@ static void mod_destroy(void);
 
 /* clang-format off */
 struct module_exports exports = {
-	"log_victorialogs", /* module name */
+	"log_http", /* module name */
 	DEFAULT_DLFLAGS,    /* dlopen flags */
 	cmds,               /* exported functions */
 	params,             /* exported parameters */
@@ -548,23 +545,27 @@ struct module_exports exports = {
 
 static int mod_init(void)
 {
-	if(SLIST_EMPTY(&vl_targets)) {
+	if(SLIST_EMPTY(&lh_targets)) {
 		LM_ERR("no targets configured, specify at least one 'target' "
 			   "modparam\n");
 		return -1;
 	}
-	if(SLIST_EMPTY(&vl_log_grp)) {
+	if(SLIST_EMPTY(&lh_log_grp)) {
 		LM_ERR("no log groups configured, specify at least one 'map' "
 			   "modparam\n");
 		return -1;
 	}
-	if(vl_timeout <= 0) {
+	if(lh_timeout <= 0) {
 		LM_ERR("timeout must be a positive number of milliseconds\n");
 		return -1;
 	}
 
-	vl_log_buf = (char *)pkg_malloc(vl_log_buf_size + 1);
-	if(vl_log_buf == NULL) {
+	lh_format_set_default();
+	if(lh_format->init && lh_format->init() < 0)
+		return -1;
+
+	lh_log_buf = (char *)pkg_malloc(lh_log_buf_size + 1);
+	if(lh_log_buf == NULL) {
 		PKG_MEM_ERROR;
 		return -1;
 	}
@@ -592,21 +593,21 @@ static int child_init(int rank)
 	int pid;
 
 	if(rank == PROC_INIT) {
-		if(vl_worker_init_pair_sockets() < 0)
+		if(lh_worker_init_pair_sockets() < 0)
 			return -1;
 		return 0;
 	}
 
 	if(rank > 0) {
 		/* SIP worker: only sends */
-		vl_worker_close_sockets_parent();
+		lh_worker_close_sockets_parent();
 		return 0;
 	}
 
 	if(rank != PROC_MAIN)
 		return 0;
 
-	pid = fork_process(PROC_NOCHLDINIT, "log_victorialogs sender", 1);
+	pid = fork_process(PROC_NOCHLDINIT, "log_http sender", 1);
 	if(pid < 0)
 		return -1;
 
@@ -615,8 +616,8 @@ static int child_init(int rank)
 		if(cfg_child_init())
 			return -1;
 
-		vl_worker_close_sockets_child();
-		vl_worker_run();
+		lh_worker_close_sockets_child();
+		lh_worker_run();
 		/* reached only on init failure */
 		exit(-1);
 	}
@@ -627,12 +628,13 @@ static int child_init(int rank)
 static void mod_destroy(void)
 {
 	struct group_key *e, *bak;
-	struct vl_target *t, *tbak;
+	struct lh_target *t, *tbak;
 
-	vl_worker_destroy();
-	vl_free_queue();
+	lh_worker_destroy();
+	lh_free_queue();
+	lh_format_destroy();
 
-	SLIST_FOREACH_SAFE(e, &vl_log_grp, next, bak)
+	SLIST_FOREACH_SAFE(e, &lh_log_grp, next, bak)
 	{
 		log_grp_entry_t *group = &e->params;
 		struct log_grp_param *param, *tparam;
@@ -648,56 +650,56 @@ static void mod_destroy(void)
 		pkg_free(e);
 	}
 
-	SLIST_FOREACH_SAFE(t, &vl_targets, next, tbak)
+	SLIST_FOREACH_SAFE(t, &lh_targets, next, tbak)
 	{
 		pkg_free(t);
 	}
 
-	if(vl_log_buf)
-		pkg_free(vl_log_buf);
-	if(vl_auth_pwd.s)
-		pkg_free(vl_auth_pwd.s);
-	if(vl_auth_usr.s)
-		pkg_free(vl_auth_usr.s);
-	if(vl_auth_usrpwd.s)
-		pkg_free(vl_auth_usrpwd.s);
+	if(lh_log_buf)
+		pkg_free(lh_log_buf);
+	if(lh_auth_pwd.s)
+		pkg_free(lh_auth_pwd.s);
+	if(lh_auth_usr.s)
+		pkg_free(lh_auth_usr.s);
+	if(lh_auth_usrpwd.s)
+		pkg_free(lh_auth_usrpwd.s);
 }
 
 /* round-robin over the configured targets */
-struct vl_target *vl_get_next_target(void)
+struct lh_target *lh_get_next_target(void)
 {
-	if(!vl_cur_target || !SLIST_NEXT(vl_cur_target, next)) {
-		vl_cur_target = SLIST_FIRST(&vl_targets);
+	if(!lh_cur_target || !SLIST_NEXT(lh_cur_target, next)) {
+		lh_cur_target = SLIST_FIRST(&lh_targets);
 	} else {
-		vl_cur_target = SLIST_NEXT(vl_cur_target, next);
+		lh_cur_target = SLIST_NEXT(lh_cur_target, next);
 	}
-	return vl_cur_target;
+	return lh_cur_target;
 }
 
-static inline int vl_type_is(str *type, const char *name)
+static inline int lh_type_is(str *type, const char *name)
 {
 	int len = strlen(name);
 	return type->len == len && strncmp(type->s, name, len) == 0;
 }
 
-int vl_get_param_type(str *type)
+int lh_get_param_type(str *type)
 {
-	if(vl_type_is(type, "text"))
+	if(lh_type_is(type, "text"))
 		return LPT_STRING;
-	if(vl_type_is(type, "inet"))
+	if(lh_type_is(type, "inet"))
 		return LPT_IPADDR;
-	if(vl_type_is(type, "num"))
+	if(lh_type_is(type, "num"))
 		return LPT_NUMBER;
-	if(vl_type_is(type, "bool"))
+	if(lh_type_is(type, "bool"))
 		return LPT_BOOL;
-	if(vl_type_is(type, "date"))
+	if(lh_type_is(type, "date"))
 		return LPT_DATE;
-	if(vl_type_is(type, "float"))
+	if(lh_type_is(type, "float"))
 		return LPT_FLOAT;
 
-	if(vl_type_is(type, "timestamp"))
+	if(lh_type_is(type, "timestamp"))
 		return LPDT_TIMESTAMP;
-	if(vl_type_is(type, "route_name"))
+	if(lh_type_is(type, "route_name"))
 		return LPDT_ROUTENAME;
 	if(type->len > 0 && *type->s == '$') {
 		return LPDT_PLACEHOLDER;

@@ -17,8 +17,11 @@
 	<title>Overview</title>
 	<para>
 		This module ships structured log entries from the Kamailio
-		configuration script to a VictoriaLogs server. The entries are
-		formatted as JSON lines and sent over HTTP to the VictoriaLogs
+		configuration script to a log server over HTTP. The entries are
+		collected in batches and posted. The format of the request is
+		selected with the <emphasis>format</emphasis> parameter, the
+		supported formats are described in the section
+		<emphasis>Formats</emphasis>.
 	</para>
 	<para>
 		Logging is asynchronous: the SIP worker processes only pack the
@@ -31,13 +34,13 @@
 		The set of fields of a log entry is described by log groups. A log
 		group is defined with the <emphasis>default_map</emphasis> and
 		<emphasis>map</emphasis> parameters and is referenced by its key as
-		the first argument of the <function>vl_log()</function> function.
+		the first argument of the <function>http_log()</function> function.
 		Fields of the default map are filled automatically (current time,
 		route name, pseudo-variables, static values), fields of the map are
-		filled from the arguments of <function>vl_log()</function>.
+		filled from the arguments of <function>http_log()</function>.
 	</para>
 	<para>
-		Several targets (VictoriaLogs instances) can be configured for high
+		Several targets (log server instances) can be configured for high
 		availability. Batches are sent to the targets in round-robin order;
 		when a request fails, the batch is retried on the next target.
 	</para>
@@ -55,7 +58,7 @@
 				<emphasis>pv</emphasis> - needed when pseudo-variables are
 				used in <emphasis>default_map</emphasis> or in the
 				<emphasis>text</emphasis> arguments of
-				<function>vl_log()</function>, which is the case in any
+				<function>http_log()</function>, which is the case in any
 				practical configuration.
 			</para>
 			</listitem>
@@ -85,13 +88,15 @@
 
 	<section>
 	<title>Parameters</title>
-	<section id="log_victorialogs.p.target">
+
+	<section id="log_http.p.target">
 		<title><varname>target</varname> (str)</title>
 		<para>
-			URL of the VictoriaLogs jsonline ingestion endpoint, e.g.
-			<emphasis>http://127.0.0.1:9428/insert/jsonline</emphasis>.
+			URL of the ingestion endpoint of the log server, see the section
+			<emphasis>Formats</emphasis> for the endpoint of each format.
 			The parameter can be set multiple times to configure several
-			targets.
+			targets, they are used in round-robin order with failover to the
+			next target when a request fails.
 		</para>
 		<para>
 		<emphasis>
@@ -102,153 +107,44 @@
 		<title>Set <varname>target</varname> parameter</title>
 		<programlisting format="linespecific">
 ...
-modparam("log_victorialogs", "target", "http://127.0.0.1:9428/insert/jsonline")
-modparam("log_victorialogs", "target", "http://10.0.0.2:9428/insert/jsonline")
+modparam("log_http", "target", "http://127.0.0.1:9200/_bulk")
+modparam("log_http", "target", "http://10.0.0.2:9200/_bulk")
 ...
 </programlisting>
 		</example>
 	</section>
 
-	<section id="log_victorialogs.p.stream_fields">
-		<title><varname>stream_fields</varname> (str)</title>
+	<section id="log_http.p.format">
+		<title><varname>format</varname> (str)</title>
 		<para>
-			Comma-separated list of field names that identify the log stream
-			in VictoriaLogs. The value is passed in the
-			<emphasis>VL-Stream-Fields</emphasis> HTTP header. The fields
-			should have a small number of distinct values (host name,
-			application name, log group).
+			Format of the request and its options, in the form
+			<emphasis>name[=>option=value[;option=value...]]</emphasis>.
+			The name is one of <emphasis>elasticsearch</emphasis> or
+			<emphasis>ndjson</emphasis>, the options are specific to
+			the format and are described in the section
+			<emphasis>Formats</emphasis>. A value containing commas or
+			spaces has to be enclosed in single or double quotes. An unknown
+			option is a configuration error. The parameter can be set only
+			once, a second definition is a configuration error.
 		</para>
 		<para>
 		<emphasis>
-			Default value is empty (all entries go to the default stream).
+			Default value is "elasticsearch" (no options).
 		</emphasis>
 		</para>
 		<example>
-		<title>Set <varname>stream_fields</varname> parameter</title>
+		<title>Set <varname>format</varname> parameter</title>
 		<programlisting format="linespecific">
 ...
-modparam("log_victorialogs", "stream_fields", "host,app")
+modparam("log_http", "format", "elasticsearch=>index=kamailio-%Y.%m.%d")
+...
+modparam("log_http", "format", "ndjson")
 ...
 </programlisting>
 		</example>
 	</section>
 
-	<section id="log_victorialogs.p.msg_field">
-		<title><varname>msg_field</varname> (str)</title>
-		<para>
-			Name of the field that VictoriaLogs should use as the log message
-			(<emphasis>_msg</emphasis>). The value is passed in the
-			<emphasis>VL-Msg-Field</emphasis> HTTP header. Alternatively the
-			field can be named <emphasis>_msg</emphasis> directly in the map.
-		</para>
-		<para>
-		<emphasis>
-			Default value is empty (VictoriaLogs uses the _msg field).
-		</emphasis>
-		</para>
-		<example>
-		<title>Set <varname>msg_field</varname> parameter</title>
-		<programlisting format="linespecific">
-...
-modparam("log_victorialogs", "msg_field", "message")
-...
-</programlisting>
-		</example>
-	</section>
-
-	<section id="log_victorialogs.p.time_field">
-		<title><varname>time_field</varname> (str)</title>
-		<para>
-			Name of the field that VictoriaLogs should use as the log entry
-			timestamp (<emphasis>_time</emphasis>). The value is passed in
-			the <emphasis>VL-Time-Field</emphasis> HTTP header. Alternatively
-			the field can be named <emphasis>_time</emphasis> directly in the
-			default map. When no time field is present, VictoriaLogs uses the
-			ingestion time.
-		</para>
-		<para>
-		<emphasis>
-			Default value is empty (VictoriaLogs uses the _time field).
-		</emphasis>
-		</para>
-		<example>
-		<title>Set <varname>time_field</varname> parameter</title>
-		<programlisting format="linespecific">
-...
-modparam("log_victorialogs", "time_field", "ts")
-...
-</programlisting>
-		</example>
-	</section>
-
-	<section id="log_victorialogs.p.extra_fields">
-		<title><varname>extra_fields</varname> (str)</title>
-		<para>
-			Comma-separated list of <emphasis>name=value</emphasis> pairs
-			added by VictoriaLogs to every ingested entry. The value is
-			passed in the <emphasis>VL-Extra-Fields</emphasis> HTTP header.
-		</para>
-		<para>
-		<emphasis>
-			Default value is empty.
-		</emphasis>
-		</para>
-		<example>
-		<title>Set <varname>extra_fields</varname> parameter</title>
-		<programlisting format="linespecific">
-...
-modparam("log_victorialogs", "extra_fields", "host=sip1,env=prod")
-...
-</programlisting>
-		</example>
-	</section>
-
-	<section id="log_victorialogs.p.account_id">
-		<title><varname>account_id</varname> (int)</title>
-		<para>
-			VictoriaLogs tenant account id, sent in the
-			<emphasis>AccountID</emphasis> HTTP header together with
-			<emphasis>project_id</emphasis>. The headers are only sent when
-			at least one of the two is greater than zero.
-		</para>
-		<para>
-		<emphasis>
-			Default value is 0.
-		</emphasis>
-		</para>
-		<example>
-		<title>Set <varname>account_id</varname> parameter</title>
-		<programlisting format="linespecific">
-...
-modparam("log_victorialogs", "account_id", 12)
-...
-</programlisting>
-		</example>
-	</section>
-
-	<section id="log_victorialogs.p.project_id">
-		<title><varname>project_id</varname> (int)</title>
-		<para>
-			VictoriaLogs tenant project id, sent in the
-			<emphasis>ProjectID</emphasis> HTTP header. See
-			<emphasis>account_id</emphasis>.
-		</para>
-		<para>
-		<emphasis>
-			Default value is 0.
-		</emphasis>
-		</para>
-		<example>
-		<title>Set <varname>project_id</varname> parameter</title>
-		<programlisting format="linespecific">
-...
-modparam("log_victorialogs", "project_id", 34)
-...
-</programlisting>
-		</example>
-	</section>
-
-	<section id="log_victorialogs.p.auth_username">
+	<section id="log_http.p.auth_username">
 		<title><varname>auth_username</varname> (str)</title>
 		<para>
 			User name for HTTP basic authentication on the targets. The
@@ -265,13 +161,13 @@ modparam("log_victorialogs", "project_id", 34)
 		<title>Set <varname>auth_username</varname> parameter</title>
 		<programlisting format="linespecific">
 ...
-modparam("log_victorialogs", "auth_username", "kamailio")
+modparam("log_http", "auth_username", "kamailio")
 ...
 </programlisting>
 		</example>
 	</section>
 
-	<section id="log_victorialogs.p.auth_password">
+	<section id="log_http.p.auth_password">
 		<title><varname>auth_password</varname> (str)</title>
 		<para>
 			Password for HTTP basic authentication on the targets. See
@@ -286,13 +182,13 @@ modparam("log_victorialogs", "auth_username", "kamailio")
 		<title>Set <varname>auth_password</varname> parameter</title>
 		<programlisting format="linespecific">
 ...
-modparam("log_victorialogs", "auth_password", "secret")
+modparam("log_http", "auth_password", "secret")
 ...
 </programlisting>
 		</example>
 	</section>
 
-	<section id="log_victorialogs.p.timeout">
+	<section id="log_http.p.timeout">
 		<title><varname>timeout</varname> (int)</title>
 		<para>
 			Maximum duration of one HTTP request in milliseconds. A request
@@ -308,13 +204,38 @@ modparam("log_victorialogs", "auth_password", "secret")
 		<title>Set <varname>timeout</varname> parameter</title>
 		<programlisting format="linespecific">
 ...
-modparam("log_victorialogs", "timeout", 2000)
+modparam("log_http", "timeout", 2000)
 ...
 </programlisting>
 		</example>
 	</section>
 
-	<section id="log_victorialogs.p.batch_size">
+	<section id="log_http.p.chunked">
+		<title><varname>chunked</varname> (int)</title>
+		<para>
+			If set to 1, the request body is sent with chunked transfer
+			encoding: the entries of a batch are serialized one by one while
+			curl is sending, so only one entry at a time is kept in the
+			request buffer. If set to 0, the whole batch is assembled in
+			memory first and sent with a Content-Length header, for servers
+			or proxies that do not accept chunked requests.
+		</para>
+		<para>
+		<emphasis>
+			Default value is 1.
+		</emphasis>
+		</para>
+		<example>
+		<title>Set <varname>chunked</varname> parameter</title>
+		<programlisting format="linespecific">
+...
+modparam("log_http", "chunked", 0)
+...
+</programlisting>
+		</example>
+	</section>
+
+	<section id="log_http.p.batch_size">
 		<title><varname>batch_size</varname> (int)</title>
 		<para>
 			Maximum number of log entries in one HTTP request. When the
@@ -331,13 +252,13 @@ modparam("log_victorialogs", "timeout", 2000)
 		<title>Set <varname>batch_size</varname> parameter</title>
 		<programlisting format="linespecific">
 ...
-modparam("log_victorialogs", "batch_size", 100)
+modparam("log_http", "batch_size", 100)
 ...
 </programlisting>
 		</example>
 	</section>
 
-	<section id="log_victorialogs.p.batch_delay">
+	<section id="log_http.p.batch_delay">
 		<title><varname>batch_delay</varname> (int)</title>
 		<para>
 			Interval in milliseconds between the sending of the queued
@@ -352,19 +273,20 @@ modparam("log_victorialogs", "batch_size", 100)
 		<title>Set <varname>batch_delay</varname> parameter</title>
 		<programlisting format="linespecific">
 ...
-modparam("log_victorialogs", "batch_delay", 1000)
+modparam("log_http", "batch_delay", 1000)
 ...
 </programlisting>
 		</example>
 	</section>
 
-	<section id="log_victorialogs.p.queue_size">
+	<section id="log_http.p.queue_size">
 		<title><varname>queue_size</varname> (int)</title>
 		<para>
 			Maximum number of log entries kept in the queue of the sender
 			process. When the limit is exceeded (e.g. all targets are down),
 			new entries are dropped, an error is logged and the
-			<emphasis>vl_drop_total</emphasis> statistic is incremented.
+			<emphasis>log_http_drop_total</emphasis> statistic is
+			incremented.
 		</para>
 		<para>
 		<emphasis>
@@ -375,17 +297,17 @@ modparam("log_victorialogs", "batch_delay", 1000)
 		<title>Set <varname>queue_size</varname> parameter</title>
 		<programlisting format="linespecific">
 ...
-modparam("log_victorialogs", "queue_size", 10000)
+modparam("log_http", "queue_size", 10000)
 ...
 </programlisting>
 		</example>
 	</section>
 
-	<section id="log_victorialogs.p.default_map">
+	<section id="log_http.p.default_map">
 		<title><varname>default_map</varname> (str)</title>
 		<para>
 			Fields of a log group that are filled automatically on every
-			<function>vl_log()</function> call. The format of the value is
+			<function>http_log()</function> call. The format of the value is
 			described in the section
 			<emphasis>Format of default_map and map parameters</emphasis>.
 			The parameter can be set multiple times, once per log group.
@@ -399,17 +321,17 @@ modparam("log_victorialogs", "queue_size", 10000)
 		<title>Set <varname>default_map</varname> parameter</title>
 		<programlisting format="linespecific">
 ...
-modparam("log_victorialogs", "default_map", "gen(_time:timestamp, route:route_name, src_ip:$si, app:&amp;kamailio)")
+modparam("log_http", "default_map", "gen(@timestamp:timestamp, route:route_name, src_ip:$si, app:&amp;kamailio)")
 ...
 </programlisting>
 		</example>
 	</section>
 
-	<section id="log_victorialogs.p.map">
+	<section id="log_http.p.map">
 		<title><varname>map</varname> (str)</title>
 		<para>
 			Fields of a log group that are filled from the arguments of the
-			<function>vl_log()</function> function. The format of the value
+			<function>http_log()</function> function. The format of the value
 			is described in the section
 			<emphasis>Format of default_map and map parameters</emphasis>.
 			The parameter can be set multiple times, once per log group.
@@ -423,14 +345,73 @@ modparam("log_victorialogs", "default_map", "gen(_time:timestamp, route:route_na
 		<title>Set <varname>map</varname> parameter</title>
 		<programlisting format="linespecific">
 ...
-modparam("log_victorialogs", "map", "gen(_msg:text, code:num)")
+modparam("log_http", "map", "gen(message:text, code:num)")
+...
+</programlisting>
+		</example>
+	</section>
+
+	</section>
+
+	<section id="log_http.s.formats">
+	<title>Formats</title>
+	<section id="log_http.s.formats.elasticsearch">
+		<title>elasticsearch</title>
+		<para>
+			Elasticsearch Bulk API, described in the Elasticsearch
+			documentation:
+			<ulink url="https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-bulk">https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-bulk</ulink>.
+		</para>
+		<para>
+			Options:
+		</para>
+		<itemizedlist>
+			<listitem>
+			<para>
+				<emphasis>index</emphasis> - name of the index to put the
+				entries in. The name may contain
+				<emphasis>strftime()</emphasis> conversion specifiers,
+				evaluated in UTC when a batch is sent, e.g.
+				<emphasis>kamailio-%Y.%m.%d</emphasis> for daily indices.
+				When not set, the index has to be part of the target URL.
+			</para>
+			</listitem>
+		</itemizedlist>
+		<example>
+		<title>elasticsearch format</title>
+		<programlisting format="linespecific">
+...
+modparam("log_http", "target", "http://127.0.0.1:9200/_bulk")
+modparam("log_http", "format", "elasticsearch=>index=kamailio-%Y.%m.%d")
+...
+</programlisting>
+		</example>
+	</section>
+	<section id="log_http.s.formats.ndjson">
+		<title>ndjson</title>
+		<para>
+			Newline delimited JSON: the body of the request is the JSON
+			objects of the entries, one per line, with no envelope. See
+			<ulink url="https://github.com/ndjson/ndjson-spec">https://github.com/ndjson/ndjson-spec</ulink>.
+			The format is accepted by the log servers consuming a stream of
+			JSON lines.
+		</para>
+		<para>
+			The format has no options.
+		</para>
+		<example>
+		<title>ndjson format</title>
+		<programlisting format="linespecific">
+...
+modparam("log_http", "target", "http://127.0.0.1:9428/insert/jsonline?_stream_fields=app,group&amp;_msg_field=message&amp;_time_field=@timestamp")
+modparam("log_http", "format", "ndjson")
 ...
 </programlisting>
 		</example>
 	</section>
 	</section>
 
-	<section id="log_victorialogs.s.format">
+	<section id="log_http.s.format">
 	<title>Format of default_map and map parameters</title>
 	<para>
 		The value of both parameters has the format
@@ -440,15 +421,15 @@ modparam("log_victorialogs", "map", "gen(_msg:text, code:num)")
 		<listitem>
 		<para>
 			<emphasis>key</emphasis> - name of the log group, used as the
-			first argument of <function>vl_log()</function>.
+			first argument of <function>http_log()</function>.
 		</para>
 		</listitem>
 		<listitem>
 		<para>
 			<emphasis>name</emphasis> - name of the JSON field in the log
-			entry. The VictoriaLogs special fields
-			<emphasis>_msg</emphasis>, <emphasis>_time</emphasis> and the
-			stream fields can be used directly.
+			entry. Special field names of the log server
+			(<emphasis>@timestamp</emphasis>, <emphasis>_msg</emphasis>,
+			<emphasis>_time</emphasis>) can be used directly.
 		</para>
 		</listitem>
 		<listitem>
@@ -471,7 +452,7 @@ modparam("log_victorialogs", "map", "gen(_msg:text, code:num)")
 		<listitem>
 		<para>
 			<emphasis>route_name</emphasis> - name of the route block from
-			which <function>vl_log()</function> is called.
+			which <function>http_log()</function> is called.
 		</para>
 		</listitem>
 		<listitem>
@@ -534,9 +515,9 @@ modparam("log_victorialogs", "map", "gen(_msg:text, code:num)")
 
 	<section>
 	<title>Functions</title>
-	<section id="log_victorialogs.f.vl_log">
+	<section id="log_http.f.http_log">
 		<title>
-		<function moreinfo="none">vl_log(key[, value1, ...])</function>
+		<function moreinfo="none">http_log(key[, value1, ...])</function>
 		</title>
 		<para>
 			Build a log entry of the log group <emphasis>key</emphasis> and
@@ -553,26 +534,43 @@ modparam("log_victorialogs", "map", "gen(_msg:text, code:num)")
 		This function can be used from ANY_ROUTE.
 		</para>
 		<example>
-		<title><function>vl_log</function> usage</title>
+		<title><function>http_log</function> usage with Elasticsearch</title>
 		<programlisting format="linespecific">
 ...
-modparam("log_victorialogs", "target", "http://127.0.0.1:9428/insert/jsonline")
-modparam("log_victorialogs", "stream_fields", "app,group")
-modparam("log_victorialogs", "default_map", "gen(_time:timestamp, app:&amp;kamailio, group:&amp;gen, route:route_name, callid:$ci, src_ip:$si)")
-modparam("log_victorialogs", "map", "gen(_msg:text, code:num)")
-modparam("log_victorialogs", "default_map", "auth(_time:timestamp, app:&amp;kamailio, group:&amp;auth, callid:$ci)")
-modparam("log_victorialogs", "map", "auth(_msg:text, user:text, ok:bool)")
+modparam("log_http", "target", "http://127.0.0.1:9200/_bulk")
+modparam("log_http", "format", "elasticsearch=>index=kamailio-%Y.%m.%d")
+modparam("log_http", "default_map", "gen(@timestamp:timestamp, app:&amp;kamailio, group:&amp;gen, route:route_name, callid:$ci, src_ip:$si)")
+modparam("log_http", "map", "gen(message:text, code:num)")
+modparam("log_http", "default_map", "auth(@timestamp:timestamp, app:&amp;kamailio, group:&amp;auth, callid:$ci)")
+modparam("log_http", "map", "auth(message:text, user:text, ok:bool)")
 ...
 request_route {
     ...
-    vl_log("gen", "request $rm from $si", "100");
+    http_log("gen", "request $rm from $si", "100");
     ...
     if (!auth_check("$fd", "subscriber", "1")) {
-        vl_log("auth", "authentication failed", "$au", "false");
+        http_log("auth", "authentication failed", "$au", "false");
         auth_challenge("$fd", "1");
         exit;
     }
-    vl_log("auth", "authenticated", "$au", "true");
+    http_log("auth", "authenticated", "$au", "true");
+    ...
+}
+...
+</programlisting>
+		</example>
+		<example>
+		<title><function>http_log</function> usage with ndjson format</title>
+		<programlisting format="linespecific">
+...
+modparam("log_http", "target", "http://127.0.0.1:9428/insert/jsonline?_stream_fields=app,group")
+modparam("log_http", "format", "ndjson")
+modparam("log_http", "default_map", "gen(_time:timestamp, app:&amp;kamailio, group:&amp;gen, route:route_name, callid:$ci, src_ip:$si)")
+modparam("log_http", "map", "gen(_msg:text, code:num)")
+...
+request_route {
+    ...
+    http_log("gen", "request $rm from $si", "100");
     ...
 }
 ...
@@ -583,20 +581,20 @@ request_route {
 
 	<section>
 	<title>Statistics</title>
-	<section id="log_victorialogs.st.vl_queue_size">
-		<title><varname>vl_queue_size</varname></title>
+	<section id="log_http.st.log_http_queue_size">
+		<title><varname>log_http_queue_size</varname></title>
 		<para>
 			Current number of log entries waiting in the sender queue.
 		</para>
 	</section>
-	<section id="log_victorialogs.st.vl_drop_total">
-		<title><varname>vl_drop_total</varname></title>
+	<section id="log_http.st.log_http_drop_total">
+		<title><varname>log_http_drop_total</varname></title>
 		<para>
 			Total number of log entries dropped because the queue was full.
 		</para>
 	</section>
-	<section id="log_victorialogs.st.vl_err_total">
-		<title><varname>vl_err_total</varname></title>
+	<section id="log_http.st.log_http_err_total">
+		<title><varname>log_http_err_total</varname></title>
 		<para>
 			Total number of failed HTTP requests.
 		</para>
@@ -614,17 +612,17 @@ request_route {
 		target in one request. Only one request is in flight at a time.
 	</para>
 	<para>
-		On success the entries are removed from the queue and the next batch
-		is sent immediately if the queue is not empty. On failure the
-		<emphasis>vl_err_total</emphasis> statistic is incremented and the
-		same batch is retried on the next target. When all the targets failed,
-		the entries stay in the queue until the next
+		On success (HTTP 2xx) the entries are removed from the queue and the
+		next batch is sent immediately if the queue is not empty. On failure
+		the <emphasis>log_http_err_total</emphasis> statistic is
+		incremented and the same batch is retried on the next target. When
+		all the targets failed, the entries stay in the queue until the next
 		<emphasis>batch_delay</emphasis> tick.
 	</para>
 	<para>
 		When the queue holds more than <emphasis>queue_size</emphasis>
 		entries, new entries are dropped and
-		<emphasis>vl_drop_total</emphasis> is incremented.
+		<emphasis>log_http_drop_total</emphasis> is incremented.
 	</para>
 	</section>
 

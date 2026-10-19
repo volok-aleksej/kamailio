@@ -1,6 +1,5 @@
 /**
  * Copyright (C) 2019-2026 Alexey Volokitin (didww.com)
- * Copyright (C) 2025-2026 Michael Furmur (didww.com)
  *
  * This file is part of Kamailio, a free SIP server.
  *
@@ -20,33 +19,22 @@
  *
  */
 
-#ifndef _VL_WORKER_H_
-#define _VL_WORKER_H_
-
-#include <stdbool.h>
-#include <curl/curl.h>
+#ifndef _LH_PARAM_MAP_PARSER_H_
+#define _LH_PARAM_MAP_PARSER_H_
 
 #include "../../core/str.h"
-#include "vl_async.h"
 
-struct curl_conn_handle
-{
-	struct vl_target *target;
-	CURL *curl;
-	/* target that started the failover round, 0 if none */
-	struct vl_target *failover_target;
-	/* request body: newline-delimited json lines */
-	str body;
-	struct curl_slist *headers;
-};
+/**
+ * callback invoked by parse_log_mapping():
+ *  - once with name==NULL when a new group key is found
+ *  - once per "name:type" pair inside the group
+ */
+typedef int (*parser_cb)(
+		str *key, str *name, int type, str *stype, void *usrdata);
 
-void vl_worker_destroy(void);
-int vl_worker_init_pair_sockets(void);
-void vl_worker_close_sockets_parent(void);
-void vl_worker_close_sockets_child(void);
-void vl_worker_run(void);
-bool vl_worker_send(void *entry);
-int vl_conn_add(struct curl_conn_handle *conn);
-void vl_conn_remove(struct curl_conn_handle *conn);
+/**
+ * parse mapping string of format "key(name:type[,name:type...])"
+ */
+int parse_log_mapping(char *val, parser_cb cb, void *userdata);
 
 #endif

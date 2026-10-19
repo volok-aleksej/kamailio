@@ -10,18 +10,13 @@
 
 <book xmlns:xi="http://www.w3.org/2001/XInclude">
     <bookinfo>
-	<title>log_victorialogs Module</title>
+	<title>log_http Module</title>
 	<productname class="trade">kamailio.org</productname>
 	<authorgroup>
 	    <author>
 		<firstname>Alexey</firstname>
 		<surname>Volokitin</surname>
 		<email>alexey.v@didww.com</email>
-	    </author>
-	    <author>
-		<firstname>Michael</firstname>
-		<surname>Furmur</surname>
-		<email>michael.f@didww.com</email>
 	    </author>
 	    <editor>
 		<firstname>Alexey</firstname>
@@ -36,6 +31,6 @@
     </bookinfo>
     <toc></toc>
 
-    <xi:include href="log_victorialogs_admin.xml"/>
+    <xi:include href="log_http_admin.xml"/>
 
 </book>
